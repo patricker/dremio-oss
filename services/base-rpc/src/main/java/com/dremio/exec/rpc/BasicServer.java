@@ -26,6 +26,8 @@ import org.apache.arrow.memory.BufferAllocator;
 import com.google.protobuf.Internal.EnumLite;
 import com.dremio.common.exceptions.UserException;
 import com.dremio.exec.proto.GeneralRPCProtos.RpcMode;
+import com.dremio.exec.rpc.ssl.SSLEngineFactory;
+import com.dremio.exec.rpc.ssl.SSLEngineFactoryImpl;
 import com.google.protobuf.MessageLite;
 import com.google.protobuf.Parser;
 
@@ -41,8 +43,12 @@ import io.netty.channel.EventLoopGroup;
 import io.netty.channel.group.ChannelGroup;
 import io.netty.channel.group.DefaultChannelGroup;
 import io.netty.channel.socket.SocketChannel;
+import io.netty.handler.ssl.SslHandler;
 import io.netty.handler.timeout.ReadTimeoutHandler;
 import io.netty.util.concurrent.GlobalEventExecutor;
+
+import javax.net.ssl.SSLEngine;
+import java.util.Optional;
 
 /**
  * A server is bound to a port and is responsible for responding to various type of requests. In some cases,
@@ -118,6 +124,23 @@ public abstract class BasicServer<T extends EnumLite, C extends RemoteConnection
     connection.setChannelCloseHandler(newCloseListener(ch, connection));
 
     final ChannelPipeline pipeline = ch.pipeline();
+
+    try {
+      Optional<SSLEngineFactory> sslEngineFactory = SSLEngineFactoryImpl.create(rpcConfig.getSSLConfig());
+      if(sslEngineFactory.isPresent()) {
+        SSLEngine sslEngine = sslEngineFactory.get().newServerEngine(ch.alloc(), ch.localAddress().getHostName(), ch.localAddress().getPort());
+        SslHandler sslHandler = new SslHandler(sslEngine);
+        sslHandler.handshakeFuture().addListener(future -> {
+          if (!future.isSuccess()) {
+            logger.error("SSL handshake failed.", future.cause());
+          }
+        });
+        pipeline.addFirst("ssl", sslHandler);
+      }
+    } catch(Exception ex){
+
+    }
+
     pipeline.addLast(PROTOCOL_ENCODER, new RpcEncoder("s-" + rpcConfig.getName()));
     pipeline.addLast(MESSAGE_DECODER, newDecoder(connection.getAllocator()));
     pipeline.addLast(HANDSHAKE_HANDLER, newHandshakeHandler(connection));

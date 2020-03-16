@@ -23,12 +23,16 @@ import java.util.concurrent.Executor;
 import org.apache.arrow.memory.BufferAllocator;
 
 import com.dremio.common.AutoCloseables;
+import com.dremio.config.DremioConfig;
 import com.dremio.exec.rpc.EventLoopCloseable;
 import com.dremio.exec.rpc.RpcCommand;
 import com.dremio.exec.rpc.RpcConfig;
 import com.dremio.exec.rpc.RpcException;
 import com.dremio.exec.rpc.TransportCheck;
+import com.dremio.exec.rpc.ssl.SSLConfig;
+import com.dremio.exec.rpc.ssl.SSLConfigurator;
 import com.dremio.exec.rpc.ssl.SSLEngineFactory;
+import com.dremio.exec.rpc.ssl.SSLEngineFactoryImpl;
 import com.dremio.services.fabric.api.FabricCommandRunner;
 import com.dremio.services.fabric.api.FabricProtocol;
 import com.dremio.services.fabric.api.FabricRunnerFactory;
@@ -54,7 +58,7 @@ public class FabricServiceImpl implements FabricService {
   private final long reservationInBytes;
   private final long maxAllocationInBytes;
 
-  private final RpcConfig rpcConfig;
+  private RpcConfig rpcConfig;
 
   private BufferAllocator allocator;
   private EventLoopGroup eventLoop;
@@ -65,6 +69,29 @@ public class FabricServiceImpl implements FabricService {
   private volatile int port = -1;
 
   public FabricServiceImpl(
+    String address,
+    int initialPort,
+    boolean allowPortHunting,
+    int threadCount,
+    BufferAllocator bootstrapAllocator,
+    long reservationInBytes,
+    long maxAllocationInBytes,
+    int timeoutInSeconds,
+    Executor rpcHandleDispatcher
+  ){
+    this(address,
+      initialPort,
+      allowPortHunting,
+      threadCount,
+      bootstrapAllocator,
+      reservationInBytes,
+      maxAllocationInBytes,
+      timeoutInSeconds,
+      rpcHandleDispatcher,
+      DremioConfig.create());
+  }
+
+  public FabricServiceImpl(
       String address,
       int initialPort,
       boolean allowPortHunting,
@@ -73,7 +100,8 @@ public class FabricServiceImpl implements FabricService {
       long reservationInBytes,
       long maxAllocationInBytes,
       int timeoutInSeconds,
-      Executor rpcHandleDispatcher
+      Executor rpcHandleDispatcher,
+      DremioConfig dremioConfig
   ) {
     this.address = address;
     this.initialPort = allowPortHunting ? initialPort + 333 : initialPort;
@@ -83,7 +111,15 @@ public class FabricServiceImpl implements FabricService {
     this.reservationInBytes = reservationInBytes;
     this.maxAllocationInBytes = maxAllocationInBytes;
 
-    rpcConfig = FabricRpcConfig.getMapping(timeoutInSeconds, rpcHandleDispatcher, Optional.empty());
+    final SSLConfigurator configurator = new SSLConfigurator(dremioConfig, DremioConfig.FABRIC_SSL_PREFIX, "fabric");
+
+    try {
+      final Optional<SSLConfig> sslConfigOption = configurator.getSSLConfig(false, true, dremioConfig.getThisNode());
+      rpcConfig = FabricRpcConfig.getMapping(timeoutInSeconds, rpcHandleDispatcher, sslConfigOption);
+    } catch (Throwable e) {
+      logger.error("Failed to setup Fabric Layer SSL, falling back to an unsecured Fabric layer configuration.", e);
+      rpcConfig = FabricRpcConfig.getMapping(timeoutInSeconds, rpcHandleDispatcher, Optional.empty());
+    }
   }
 
   @Override
@@ -134,7 +170,7 @@ public class FabricServiceImpl implements FabricService {
   }
 
   protected Optional<SSLEngineFactory> getSSLEngineFactory() throws RpcException {
-    return Optional.empty();
+    return SSLEngineFactoryImpl.create(getRpcConfig().getSSLConfig());
   }
 
   protected FabricServer newFabricServer() throws Exception {

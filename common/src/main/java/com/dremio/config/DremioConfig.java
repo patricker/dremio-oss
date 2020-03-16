@@ -149,6 +149,13 @@ public class DremioConfig extends NestedConfig {
   // web SSL configuration
   public static final String WEB_SSL_PREFIX = "services.coordinator.web.ssl.";
 
+  // client-endpoint ssl configuration
+  public static final String CLIENT_SSL_PREFIX = "services.coordinator.client-endpoint.ssl.";
+
+  // fabric ssl configuration
+  public static final String FABRIC_SSL_PREFIX = "services.fabric.ssl.";
+
+
   // datastore
   public static final String DATASTORE_TYPE = "services.datastore.type";
   public static final String DATASTORE_CONFIG = "services.datastore.config";

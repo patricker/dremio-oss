@@ -170,13 +170,15 @@ public class SabotNode implements AutoCloseable {
         0,
         Long.MAX_VALUE,
         config.getInt(RpcConstants.BIT_RPC_TIMEOUT),
-        bootstrap.getExecutor()
+        bootstrap.getExecutor(),
+        dremioConfig
     ));
 
     // RPC Endpoints.
     registry.bindSelf(new UserServer(bootstrap,
         registry.provider(SabotContext.class),
         registry.provider(UserWorker.class),
+        registry.provider(DremioConfig.class),
         allowPortHunting));
 
     registry.bindSelf(new CoordExecService(

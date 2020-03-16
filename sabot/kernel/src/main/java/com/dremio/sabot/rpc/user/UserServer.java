@@ -22,9 +22,12 @@ import javax.inject.Provider;
 import org.apache.arrow.memory.BufferAllocator;
 
 import com.dremio.common.AutoCloseables;
+import com.dremio.config.DremioConfig;
 import com.dremio.exec.ExecConstants;
 import com.dremio.exec.rpc.EventLoopCloseable;
 import com.dremio.exec.rpc.TransportCheck;
+import com.dremio.exec.rpc.ssl.SSLConfig;
+import com.dremio.exec.rpc.ssl.SSLConfigurator;
 import com.dremio.exec.server.BootStrapContext;
 import com.dremio.exec.server.SabotContext;
 import com.dremio.exec.work.protector.UserWorker;
@@ -43,6 +46,7 @@ public class UserServer implements Service {
   private final Provider<UserWorker> worker;
   private final boolean allowPortHunting;
   private final Provider<SabotContext> dbContext;
+  private final Provider<DremioConfig> dremioConfig;
 
   private EventLoopCloseable eventLoopCloseable;
   private BufferAllocator allocator;
@@ -54,12 +58,14 @@ public class UserServer implements Service {
       BootStrapContext context,
       Provider<SabotContext> dbContext,
       Provider<UserWorker> worker,
+      Provider<DremioConfig> dremioConfig,
       boolean allowPortHunting
   ) {
     this.context = context;
     this.worker = worker;
     this.allowPortHunting = allowPortHunting;
     this.dbContext = dbContext;
+    this.dremioConfig = dremioConfig;
   }
 
   public int getPort() {
@@ -97,8 +103,11 @@ public class UserServer implements Service {
   }
 
   protected UserRPCServer newUserRPCServer(EventLoopGroup eventLoopGroup) throws Exception {
+    final SSLConfigurator configurator = new SSLConfigurator(dremioConfig.get(), DremioConfig.CLIENT_SSL_PREFIX, "user client");
+    final Optional<SSLConfig> sslConfigOption = configurator.getSSLConfig(true, dremioConfig.get().getThisNode());
+
     return new UserRPCServer(
-        UserRpcConfig.getMapping(context.getConfig(), context.getExecutor(), Optional.empty()),
+        UserRpcConfig.getMapping(context.getConfig(), context.getExecutor(), sslConfigOption),
         getDbContext(),
         getWorker(),
         getAllocator(),

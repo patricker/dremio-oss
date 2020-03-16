@@ -278,7 +278,8 @@ public class DACDaemonModule implements DACModule {
             config.getBytes(DremioConfig.FABRIC_MEMORY_RESERVATION),
             Long.MAX_VALUE,
             sabotConfig.getInt(RpcConstants.BIT_RPC_TIMEOUT),
-            bootstrap.getExecutor()
+            bootstrap.getExecutor(),
+            config
         ));
 
     registry.bind(
@@ -336,6 +337,7 @@ public class DACDaemonModule implements DACModule {
       registry.bindSelf(new UserServer(bootstrap,
           registry.provider(SabotContext.class),
           registry.provider(UserWorker.class),
+          registry.provider(DremioConfig.class),
           dacConfig.autoPort));
     }
 
